@@ -1,0 +1,38 @@
+trainer:
+  model_name: "test_model"
+  pretrained: False
+
+  train_freeze_layers: []
+  freeze_layers: False
+  n_epochs: 3
+  minimizer: False # ASAM, SAM
+  optimizer: "Adam" # nado adam, lion, sgd i hvatit ya schitayu
+  lr_scheduler: "cosine"
+  max_lr: !!float 5e-2
+  min_lr: !!float 1e-4
+
+  ckpt_load: ~
+  ckpt_dir: "./ckpts"
+  batch_size: 16
+  save_interval: 1
+
+  scheduler_cfg: # config dlya reducelronplateaeaeaeau
+    mode: "min"
+    factor: 0.05
+    patience: 2
+    threshold: 0.0001
+    threshold_mode: "rel"
+    cooldown: 0
+    min_lr: 1e-12
+    eps: 1e-8
+
+  augmentations: False
+  log_interval: 1
+
+validation_intermediate:
+  validate: True
+  interval: 1
+
+validation_final:
+  validate: False
+  testset: "val"
