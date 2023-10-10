@@ -36,9 +36,11 @@ class Trainer:
         self._init_model()
         if not (self.trainer_config["pretrained"] and self.trainer_config["ckpt_load"]):
             self.model.apply(init_weights)
-
+        self.iteration = 0  # add loading from model
+        self.val_iteration = 0
         self._init_optimizer()
         self._init_criterion()
+        self._init_tb_logger()
 
         self.history = defaultdict(list)
 
@@ -107,9 +109,9 @@ class Trainer:
         path2save = Path(f"./ckpts/{self.trainer_config['model_name']}/")
         path2save.mkdir(parents=True, exist_ok=True)
         for epoch in range(self.trainer_config["n_epochs"]):
-            self._train_epoch(train_loader, epoch)
+            self._train_epoch(train_loader, epoch + 1)
             if self.val_config["validate"] and epoch % self.val_config["interval"] == 0:
-                self._validate(val_loader, epoch)
+                self._validate(val_loader, epoch + 1)
 
             if (epoch + 1) % self.trainer_config["save_interval"] == 0:
                 ckpt_name = (
@@ -133,9 +135,9 @@ class Trainer:
                 epoch / self.trainer_config["n_epochs"] * 100,
             ),
         )
-
         losses, accs = [], []
         for batch_idx, (data, target) in enumerate(pbar):
+            self.iteration += 1
             data, target = data.to(self.device), target.to(self.device)
             logits = self.model(data)
             loss = self.criterion(logits, target)
@@ -150,6 +152,10 @@ class Trainer:
             losses.append(loss.item())
             self.history["learning_rate"].append(self.opt.param_groups[0]["lr"])
 
+            self.tb_logger.add_scalar(
+                "lr", self.history["learning_rate"][-1], self.iteration
+            )
+
             if (batch_idx + 1) % self.trainer_config["train_log_interval"] == 0:
                 self.history["train_loss"].append(
                     np.mean(losses[-self.trainer_config["train_log_interval"] :])
@@ -159,10 +165,34 @@ class Trainer:
                     np.mean(accs[-self.trainer_config["train_log_interval"] :]) * 100
                 )
 
+                self.tb_logger.add_scalar(
+                    f"Train/loss_each_{self.trainer_config['train_log_interval']}b",
+                    self.history["train_loss"][-1],
+                    self.iteration,
+                )
+
+                self.tb_logger.add_scalar(
+                    f"Train/accuracy_each_{self.trainer_config['train_log_interval']}b",
+                    self.history["train_accuracy"][-1],
+                    self.iteration,
+                )
+
                 pbar.set_postfix(
                     loss=self.history["train_loss"][-1],
                     accuracy=self.history["train_accuracy"][-1],
                 )
+
+        self.history["epoch_train_loss"].append(np.mean(losses))
+        self.history["epoch_train_accuracy"].append(np.mean(accs))
+
+        self.tb_logger.add_scalar(
+            "Train/loss_mean", self.history["epoch_train_loss"][-1], epoch
+        )
+
+        self.tb_logger.add_scalar(
+            "Train/accuracy", self.history["epoch_train_accuracy"][-1] * 100, epoch
+        )
+
         if self.scheduler:
             if self.trainer_config["lr_scheduler"] == "reduce_lr":
                 self.scheduler.step(losses[-1])
@@ -177,6 +207,7 @@ class Trainer:
         losses, accs = [], []
         with torch.no_grad():
             for batch_idx, (data, target) in enumerate(pbar):
+                self.val_iteration += 1
                 data, target = data.to(self.device), target.to(self.device)
                 logits = self.model(data)
                 loss = self.criterion(logits, target).item()
@@ -194,6 +225,18 @@ class Trainer:
                         np.mean(accs[-self.trainer_config["val_log_interval"] :]) * 100
                     )
 
+                    self.tb_logger.add_scalar(
+                        f"Val/loss_each_{self.trainer_config['val_log_interval']}b",
+                        self.history["val_loss"][-1],
+                        self.val_iteration,
+                    )
+
+                    self.tb_logger.add_scalar(
+                        f"Val/accuracy_each_{self.trainer_config['val_log_interval']}b",
+                        self.history["val_accuracy"][-1],
+                        self.val_iteration,
+                    )
+
                     pbar.set_postfix(
                         loss=self.history["val_loss"][-1],
                         accuracy=self.history["val_accuracy"][-1],
@@ -201,3 +244,11 @@ class Trainer:
 
         self.history["epoch_val_loss"].append(np.mean(losses))
         self.history["epoch_val_accuracy"].append(np.mean(accs))
+
+        self.tb_logger.add_scalar(
+            "Val/loss_mean", self.history["epoch_val_loss"][-1], epoch
+        )
+
+        self.tb_logger.add_scalar(
+            "Val/accuracy", self.history["epoch_val_accuracy"][-1], epoch
+        )

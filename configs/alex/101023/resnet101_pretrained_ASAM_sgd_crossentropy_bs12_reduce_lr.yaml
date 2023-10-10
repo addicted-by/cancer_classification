@@ -1,6 +1,6 @@
 trainer:
-  model_name: "resnet18"
-  pretrained: False
+  model_name: "resnet101"
+  pretrained: True
 
   train_freeze_layers: []
   freeze_layers: False
