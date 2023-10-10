@@ -2,11 +2,14 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import torch
-from asam import ASAM, SAM
-from logger import setup_custom_logger
-from models import get_model_by_name
+from cancer_classification.logger import setup_custom_logger
+from cancer_classification.models import get_model_by_name
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from .asam import ASAM, SAM
 
 
 logger = setup_custom_logger(__name__)
@@ -22,14 +25,16 @@ def init_weights(m):
 class Trainer:
     def __init__(self, config):
         self.config = config
-        self.opt_cfg = self.config["opt_cfg"]
+        self.trainer_config = config["trainer"]
+        self.val_config = config["validation_intermediate"]
+        self.opt_cfg = self.trainer_config["opt_cfg"]
         self.scheduler = None
-        self.device = self.config["device"]
+        self.device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )  # self.config["device"] # change
         self.minimizer = None
         self._init_model()
-        if not (
-            self.config["trainer"]["pretrained"] and self.config["trainer"]["ckpt_load"]
-        ):
+        if not (self.trainer_config["pretrained"] and self.trainer_config["ckpt_load"]):
             self.model.apply(init_weights)
 
         self._init_optimizer()
@@ -43,40 +48,53 @@ class Trainer:
         print(self.model)
 
     def _init_optimizer(self):
-        if self.config["opt"] == "adam":
+        if self.trainer_config["optimizer"] == "adam":
             self.opt = torch.optim.Adam(self.model.parameters(), **self.opt_cfg)
-        elif self.config["opt"] == "adamw":
+        elif self.trainer_config["optimizer"] == "adamw":
             self.opt = torch.optim.AdamW(self.model.parameters(), **self.opt_cfg)
-        elif self.config["opt"] == "rmsprop":
+        elif self.trainer_config["optimizer"] == "rmsprop":
             self.opt = torch.optim.RMSprop(self.model.parameters(), **self.opt_cfg)
-        elif self.config["opt"] == "sgd":
+        elif self.trainer_config["optimizer"] == "sgd":
             self.opt = torch.optim.SGD(self.model.parameters(), **self.opt_cfg)
         else:
-            raise ValueError(f"Optimizer {self.config['opt']} is not implemented!")
+            raise NotImplementedError(
+                f"Optimizer {self.trainer_config['optimizer']} is not implemented!"
+            )
 
-        if self.config["scheduler"]:
-            if self.config["scheduler"] == "cosine":
+        if self.trainer_config["lr_scheduler"]:
+            if self.trainer_config["lr_scheduler"] == "cosine":
                 self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    self.opt, **self.config["scheduler_cfg"]
+                    self.opt, **self.trainer_config["scheduler_cfg"]
                 )
-            elif self.config["scheduler"] == "reduce_lr":
+            elif self.trainer_config["lr_scheduler"] == "reduce_lr":
                 self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    self.opt, **self.config["scheduler_cfg"]
+                    self.opt, **self.trainer_config["scheduler_cfg"]
+                )
+            else:
+                raise NotImplementedError(
+                    f"Scheduler {self.trainer_config['lr_scheduler']} is not implemented!"
+                )
+        if self.trainer_config["minimizer"]:
+            if self.trainer_config["minimizer"] == "asam":
+                self.minimizer = ASAM(
+                    self.opt, self.model, **self.trainer_config["minimizer_cfg"]
+                )
+            elif self.trainer_config["minimzer"] == "sam":
+                self.minimizer = SAM(
+                    self.opt, self.model, **self.trainer_config["minimizer_cfg"]
                 )
             else:
                 raise ValueError(
-                    f"Scheduler {self.config['scheduler']} is not implemented!"
+                    f"Minimizer {self.trainer_config['minimizer']} is not available!"
                 )
-        if self.config["minimizer"]:
-            if self.config["minimizer"] == "asam":
-                self.minimizer = ASAM(
-                    self.opt, self.model, **self.config["minimizer_cfg"]
-                )
-            if self.config["minimzer"] == "sam":
-                self.minimizer = SAM(self.opt, self.model, **self.config["minimizer_cfg"])
 
     def _init_criterion(self):
-        self.criterion = torch.nn.CrossEntropyLoss()
+        if self.trainer_config["criterion"] == "crossentropy":
+            self.criterion = torch.nn.CrossEntropyLoss()
+        else:
+            raise NotImplementedError(
+                f"Criterion {self.trainer_config['criterion']} is not implemented!"
+            )
 
     def _init_tb_logger(self):
         experiment = datetime.now().strftime("%m%d%Y.%H%M%S")
@@ -102,8 +120,79 @@ class Trainer:
 
     def _train_epoch(self, loader, epoch):
         self.model.train(True)
-        pass
+
+        desc_pattern = "Train Epoch: {} [{}/{} ({:.0f}%)]"
+        pbar = tqdm(
+            loader,
+            unit="batch",
+            total=len(loader),
+            desc=desc_pattern.format(
+                epoch,
+                epoch,
+                self.trainer_config["n_epochs"],
+                epoch / self.trainer_config["n_epochs"] * 100,
+            ),
+        )
+
+        losses, accs = [], []
+        for batch_idx, (data, target) in enumerate(pbar):
+            data, target = data.to(self.device), target.to(self.device)
+            logits = self.model(data)
+            loss = self.criterion(logits, target)
+
+            loss.backward()
+            self.opt.step()
+            self.opt.zero_grad()
+
+            y_pred = logits.max(1)[1].data.cpu().numpy()
+            acc = np.mean(target.cpu().numpy() == y_pred)
+            accs.append(acc)
+            losses.append(loss.item())
+            self.history["learning_rate"].append(self.opt.param_groups[0]["lr"])
+
+            if (batch_idx + 1) % self.trainer_config["train_log_interval"] == 0:
+                self.history["train_loss"].append(
+                    np.mean(losses[-self.trainer_config["train_log_interval"] :])
+                )
+
+                self.history["train_accuracy"].append(
+                    np.mean(accs[-self.trainer_config["train_log_interval"] :]) * 100
+                )
+
+                pbar.set_postfix(
+                    loss=self.history["train_loss"][-1],
+                    accuracy=self.history["train_accuracy"][-1],
+                )
 
     def _validate(self, loader, epoch):
         self.model.train(False)
-        pass
+
+        pbar = tqdm(loader, total=len(loader), desc=f"Validation Epoch: {epoch}: ")
+
+        losses, accs = [], []
+        with torch.no_grad():
+            for batch_idx, (data, target) in enumerate(pbar):
+                data, target = data.to(self.device), target.to(self.device)
+                logits = self.model(data)
+                loss = self.criterion(logits, target).item()
+                y_pred = logits.max(1)[1].data.cpu().numpy()
+                acc = np.mean(target.cpu().numpy() == y_pred)
+                losses.append(loss)
+                accs.append(acc)
+
+                if (batch_idx + 1) % self.trainer_config["val_log_interval"] == 0:
+                    self.history["val_loss"].append(
+                        np.mean(losses[-self.trainer_config["val_log_interval"] :])
+                    )
+
+                    self.history["val_accuracy"].append(
+                        np.mean(accs[-self.trainer_config["val_log_interval"] :]) * 100
+                    )
+
+                    pbar.set_postfix(
+                        loss=self.history["val_loss"][-1],
+                        accuracy=self.history["val_accuracy"][-1],
+                    )
+
+        self.history["epoch_val_loss"].append(np.mean(losses))
+        self.history["epoch_val_accuracy"].append(np.mean(accs))

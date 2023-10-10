@@ -12,7 +12,7 @@ logger = setup_custom_logger(__name__)
 TRAIN_URL = "https://drive.google.com/uc?id=13vdoUP7DhHo8ey7Nxf_km2p8eb_h2CLt"
 TEST_URL = ""  # poka ne zavezli na kaggle
 
-datasets = {
+DATASETS_URL = {
     "train_thumbnails": TRAIN_URL,
     # "test_thumbnails": TEST_URL
 }
@@ -20,7 +20,7 @@ datasets = {
 
 def load_thumbnails_data():
     DATA_PATH = Path("data")
-    for dataset, url in datasets.items():
+    for dataset, url in DATASETS_URL.items():
         if not ((DATA_PATH / dataset).exists() and len(os.listdir(DATA_PATH / dataset))):
             dataset_path = DATA_PATH / f"{dataset}.tar.gz"
             logger.info("Creating dir data")
@@ -34,7 +34,7 @@ def load_thumbnails_data():
     logger.info("Data had already been collected.")
     logger.info(f"Check --> {DATA_PATH}")
 
-    return [DATA_PATH / key for key in datasets]
+    return [DATA_PATH / key for key in DATASETS_URL]
 
 
 def credentials_handler(func):

@@ -4,8 +4,8 @@ trainer:
 
   train_freeze_layers: []
   freeze_layers: False
-  n_epochs: 5
-  minimizer: False # ASAM, SAM
+  n_epochs: 10
+  minimizer: "asam" # ASAM, SAM
   optimizer: "sgd" # nado adam, lion, sgd i hvatit ya schitayu
   lr_scheduler: "reduce_lr" # cosine, reduce_lr
   criterion: "crossentropy"
@@ -41,7 +41,7 @@ trainer:
     momentum: 0.09
 
   augmentations: False
-  train_log_interval: 6
+  train_log_interval: 1
   val_log_interval: 2
 
 validation_intermediate:
