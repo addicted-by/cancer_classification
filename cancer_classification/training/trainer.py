@@ -164,7 +164,7 @@ class Trainer:
                     accuracy=self.history["train_accuracy"][-1],
                 )
         if self.scheduler:
-            if self.trainer_config["scheduler"] == "reduce_lr":
+            if self.trainer_config["lr_scheduler"] == "reduce_lr":
                 self.scheduler.step(losses[-1])
             else:
                 self.scheduler.step()
