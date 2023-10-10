@@ -26,6 +26,7 @@ def get_model_by_name(config: Dict):
 
         model.fc = torch.nn.Linear(2048, 5)
         model.add_module("SoftMax", torch.nn.Softmax(dim=-1))
+        # add activation (NLLoss -- LogSoftMax, GumbelSoftMax)
     else:
         raise NotImplementedError(
             f"Cannot process this model name: {config['trainer']['model_name']}"

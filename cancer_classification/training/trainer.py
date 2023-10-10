@@ -163,6 +163,11 @@ class Trainer:
                     loss=self.history["train_loss"][-1],
                     accuracy=self.history["train_accuracy"][-1],
                 )
+        if self.scheduler:
+            if self.trainer_config["scheduler"] == "reduce_lr":
+                self.scheduler.step(losses[-1])
+            else:
+                self.scheduler.step()
 
     def _validate(self, loader, epoch):
         self.model.train(False)
