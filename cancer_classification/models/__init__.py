@@ -12,9 +12,12 @@ from .resnet18 import ResNet18
 
 
 def get_model_by_name(config: Dict):
+    n_classes = config["trainer"]["n_classes"]
     pretrained = config["trainer"]["pretrained"]
     if config["trainer"]["model_name"] == "resnet18":
         model = torchvision.models.resnet18(pretrained=pretrained)
+        model.fc = torch.nn.Linear(512, n_classes)
+        model.add_module("SoftMax", torch.nn.Softmax(dim=-1))
     elif config["trainer"]["model_name"] == "resnet101":
         model = torchvision.models.resnet101(pretrained=pretrained)
 
@@ -24,7 +27,7 @@ def get_model_by_name(config: Dict):
                     for param in child.parameters():
                         param.requires_grad = False
 
-        model.fc = torch.nn.Linear(2048, 5)
+        model.fc = torch.nn.Linear(2048, n_classes)
         model.add_module("SoftMax", torch.nn.Softmax(dim=-1))
         # add activation (NLLoss -- LogSoftMax, GumbelSoftMax)
     else:

@@ -58,6 +58,8 @@ def credentials_handler(func):
 
 @credentials_handler
 def load_file(file: str, competition: str = "UBC-OCEAN", path2save: str = "./data"):
+    if (Path(path2save) / file).exists():
+        return
     subprocess.run(
         f"kaggle competitions download -c {competition} -f {file} --path {path2save}",
         shell=True,

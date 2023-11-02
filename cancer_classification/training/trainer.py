@@ -33,6 +33,7 @@ class Trainer:
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )  # self.config["device"] # change
         self.minimizer = None
+        self.experiment = datetime.now().strftime("%m%d%Y.%H%M%S")
         self._init_model()
         if not (self.trainer_config["pretrained"] and self.trainer_config["ckpt_load"]):
             self.model.apply(init_weights)
@@ -74,7 +75,7 @@ class Trainer:
                 )
             else:
                 raise NotImplementedError(
-                    f"Scheduler {self.trainer_config['lr_scheduler']} is not implemented!"
+                    f"Scheduler {self.trainer_config['lr_scheduler']} isn't implemented!"
                 )
         if self.trainer_config["minimizer"]:
             if self.trainer_config["minimizer"] == "asam":
@@ -99,13 +100,11 @@ class Trainer:
             )
 
     def _init_tb_logger(self):
-        experiment = datetime.now().strftime("%m%d%Y.%H%M%S")
-        logdir = f"./tb_logs/{self.trainer_config['model_name']}/{experiment}"
+        logdir = f"./tb_logs/{self.trainer_config['model_name']}/{self.experiment}"
         logger.info(f"Tensorboard dir: {logdir}")
         self.tb_logger = SummaryWriter(log_dir=logdir)
 
     def fit(self, train_loader, val_loader):
-        exp = datetime.now().strftime("%m%d%Y.%H%M%S")
         path2save = Path(f"./ckpts/{self.trainer_config['model_name']}/")
         path2save.mkdir(parents=True, exist_ok=True)
         for epoch in range(self.trainer_config["n_epochs"]):
@@ -115,7 +114,8 @@ class Trainer:
 
             if (epoch + 1) % self.trainer_config["save_interval"] == 0:
                 ckpt_name = (
-                    f"model_{self.trainer_config['model_name']}" + f"_{exp}_{epoch+1}.pth"
+                    f"model_{self.trainer_config['model_name']}"
+                    + f"_{self.experiment}_{epoch+1}.pth"
                 )
                 logger.info(f"SAVING MODEL EPOCH {epoch+1} --> {ckpt_name}")
                 torch.save(self.model.state_dict(), path2save / ckpt_name)

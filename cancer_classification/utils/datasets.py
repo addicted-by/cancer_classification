@@ -20,6 +20,7 @@ class ThumbnailsDataset(Dataset):
         transform: transforms = None,
         mode: str = "train",
         data_path: str = "./data/train_thumbnails",
+        le_ext: str = "",
     ):
         self.dataframe = dataframe
         self.transform = (
@@ -43,7 +44,7 @@ class ThumbnailsDataset(Dataset):
             self.labels = self.dataframe["label"].unique()
             self.label_encoder.fit(self.labels)
 
-            with open("label_encoder.pkl", "wb") as le_dump_file:
+            with open(f"label_encoder{le_ext}.pkl", "wb") as le_dump_file:
                 pickle.dump(self.label_encoder, le_dump_file)
 
     def __len__(self):
